@@ -84,11 +84,6 @@ class MachoParser(BinaryView):
 
 		log_error("Starting to parse..")
 
-		#print m.headers
-		#print dir(m)
-		#print m.headers[0].__class__
-		#symbols = SymbolTable(m.headers[0])
-
 		self.register_all()
 
 		log_info("All done.")
@@ -157,10 +152,10 @@ class MachoParser(BinaryView):
 
 		prot = get_binja_prot(segment_cmd.initprot)
 		self.add_auto_segment(start = segment_cmd.vmaddr, 
-		                         length = segment_cmd.vmsize,
-		                         data_offset = segment_cmd.fileoff,
-		                         data_length = segment_cmd.filesize,
-		                         flags = prot)
+		                      length = segment_cmd.vmsize,
+		                      data_offset = segment_cmd.fileoff,
+		                      data_length = segment_cmd.filesize,
+		                      flags = prot)
 
 		sections = filter(lambda data: is_section(data), cmd_data)
 
