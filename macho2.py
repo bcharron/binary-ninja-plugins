@@ -14,6 +14,15 @@ SECTION_TYPES = {
         "__data"   : "REGULAR"
 }
 
+MAGICS = {
+        "MH_MAGIC" : 0xfeedface,
+        "MH_CIGAM" : 0xcefaedfe,
+        "MH_MAGIC_64" : 0xfeedfacf,
+        "MH_CIGAM_64" : 0xcffaedfe
+}
+
+BUNDLE_TYPE = 8
+
 PROT_FLAGS = {
 	0x01 : SegmentReadable,
 	0x02 : SegmentWritable,
@@ -41,15 +50,44 @@ def get_binja_prot(flags):
 
 	return(ret)
 
-class MachoParser(object):
-	def __init__(self, bv, filename):
-		self.bv = bv
-		self.filename = filename
+class MachoParser(BinaryView):
+	name = "MachoBundle"
+	long_name = "MachO Bundle"
 
-		self.m = MachO(filename)
+	def __init__(self, data):
+		BinaryView.__init__(self, parent_view = data, file_metadata = data.file)
+
+        @classmethod
+        def is_valid_for_data(self, data):
+		#util.is_platform_file(bv.file)
+		header = struct.unpack('>I', data.read(0, 4))[0]
+		macho_type = struct.unpack('<I', data.read(12, 4))[0]
+
+		for name, val in MAGICS.iteritems():
+			if header == val and macho_type == BUNDLE_TYPE:
+				return(True)
+
+		return(False)
+
+	def init(self):
+		self.m = MachO(self.file.filename)
+
+		self.arch = Architecture['x86_64']
+		self.platform = Platform['mac-x86_64']
+
+		log_error("Starting to parse..")
+
+		#print m.headers
+		#print dir(m)
+		#print m.headers[0].__class__
+		#symbols = SymbolTable(m.headers[0])
+
+		self.register_all()
+
+		log_info("All done.")
 
 	def demangle(self, name):
-		demangled_name = demangle_gnu3(self.bv.arch, name)
+		demangled_name = demangle_gnu3(self.arch, name)
 
 		if demangled_name is not None:
 			if len(demangled_name) >= 2 and demangled_name[1] is not None:
@@ -81,7 +119,7 @@ class MachoParser(object):
 
 
 	def register_symbols(self):
-		proc = Popen(["nm", self.filename], stdout = PIPE)
+		proc = Popen(["nm", self.file.filename], stdout = PIPE)
 
 		for line in proc.stdout:
 			try:
@@ -93,13 +131,13 @@ class MachoParser(object):
 
 				if t == "t":
 					log_info("%08X: function %s (%s)" % ( addr, name, demangled_name ))
-					self.bv.create_user_function(self.bv.platform, addr)
+					self.create_user_function(self.platform, addr)
 					sym = Symbol(FunctionSymbol, addr, name, demangled_name)
-					self.bv.define_auto_symbol(sym)
+					self.define_auto_symbol(sym)
 				else:
 					log_info("%08X: data symbol %s" % ( addr, name ))
 					sym = Symbol(DataSymbol, addr, name, demangled_name)
-					self.bv.define_auto_symbol(sym)
+					self.define_auto_symbol(sym)
 			except ValueError, e:
 				#print e.__class__
 				#print line.rstrip()
@@ -109,18 +147,14 @@ class MachoParser(object):
 		segname = segment_cmd.segname.rstrip("\x00")
 
 		log_info("Segment %s" % segname)
-		#print "SEGMENT: %s" % segment_cmd.segname
-		#print cmd_data
 
 		prot = get_binja_prot(segment_cmd.initprot)
-		self.bv.add_auto_segment(start = segment_cmd.vmaddr, 
+		self.add_auto_segment(start = segment_cmd.vmaddr, 
 		                         length = segment_cmd.vmsize,
 		                         data_offset = segment_cmd.fileoff,
 		                         data_length = segment_cmd.filesize,
 		                         flags = prot)
 
-		#segment = self.bv.get_segment_at(segment_cmd.vmaddr)
-		
 		sections = filter(lambda data: is_section(data), cmd_data)
 
 		for section in sections:
@@ -131,44 +165,9 @@ class MachoParser(object):
 		log_info("SECTION {sectname}  ADDR {addr} OFFSET {offset}  SIZE {size}  FLAGS {flags}".format(sectname = sectname, 
 			addr = section.addr, offset = section.offset, size = section.size, flags = section.flags))
 		is_code = section.flags & macholib.mach_o.S_ATTR_PURE_INSTRUCTIONS != 0
-		#print "PURE_CODE: ", is_code
 
 		binja_type = SECTION_TYPES.get(sectname.lower(), DEFAULT_BINJA_TYPE)
 
-		#log_info("Section: %s" % sectname)
-		self.bv.add_auto_section(sectname, start = section.addr, length = section.size, align = section.align, type = binja_type)
+		self.add_auto_section(sectname, start = section.addr, length = section.size, align = section.align, type = binja_type)
 
-		#print dir(section)
-		#print ""
-
-def parse_file(bv):
-	bv.arch = Architecture['x86_64']
-	bv.platform = Platform['mac-x86_64']
-
-	filename = bv.file.filename
-
-	parser = MachoParser(bv, filename)
-
-	log_error("Starting to parse..")
-
-	#print m.headers
-	#print dir(m)
-	#print m.headers[0].__class__
-	#symbols = SymbolTable(m.headers[0])
-
-	parser.register_all()
-
-	log_info("All done.")
-
-PluginCommand.register("Parse Mach-O[2] Executable Bundle", "Parses a Mach-O executable bundle (identify functions and data)", parse_file)
-
-log_info("name: %s" % __name__)
-if __name__ == "__main__":
-	class Fake():
-		pass
-
-	bv = Fake
-	bv.file = Fake()
-	bv.file.filename = "FCEU"
-	parse_file(bv)
-
+MachoParser.register()
