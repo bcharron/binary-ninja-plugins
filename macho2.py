@@ -1,4 +1,11 @@
 #!/usr/bin/python
+#
+# Binary Ninja plugin to parse Mach-O bundles. Depends on OSX's `nm` and the
+# `macholib` python library.
+#
+# Copy to ~/Library/Application Support/Binary Ninja/plugins/
+#
+# 2016-12-23 bcharron@pobox.com
 
 import macholib
 
